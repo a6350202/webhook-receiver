@@ -1,0 +1,8 @@
+Host '#### CHANGE ME ####' 
+       StrictHostKeyChecking no
+       UserKnownHostsFile /dev/null
+       User apache
+       Hostname '#### CHANGE ME ####'
+       IdentityFile /var/www/.ssh/webhook
+       TCPKeepAlive yes
+       IdentitiesOnly yes

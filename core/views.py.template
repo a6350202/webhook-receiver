@@ -1,0 +1,72 @@
+from core import app
+from flask import request, render_template
+
+import os
+import json
+import traceback
+import shlex
+import subprocess
+
+SECRET_TOKEN = '#### CHANGE ME ####'
+BRANCH_PATH = '#### CHANGE ME ####'
+REPO_URL = '#### CHANGE ME ####'
+
+@app.route("/", methods=['GET', 'POST'])
+def webhookhandler():
+    if request.method == 'POST':
+        print 'Received POST request.'
+
+        if request.headers.get('X-Gitlab-Token') != SECRET_TOKEN:
+            return render_template('bad_request.html'), 400
+
+        if 'Content-Length' not in request.headers:
+            return render_template('bad_request.html'), 400
+
+        try:
+            data = json.loads(request.data.decode("utf-8"))
+        except ValueError:
+            traceback.print_exc(file=sys.stderr)
+            return render_template('bad_request.html'), 400
+
+        def update_branch(branch):
+            branch_path = BRANCH_PATH
+            os.chdir(branch_path)
+            run_command("git checkout -f %s" % branch)
+            run_command("git clean -fdx")
+            run_command("git pull origin %s" % branch)
+            print "Updated branch '%s'" % branch_path
+
+        data_repository = data.get('repository', {}).get('url')
+        if data_repository == REPO_URL:
+           branch_to_update = data.get('ref', '').split('refs/heads/')[-1]
+           branch_to_update = branch_to_update.replace('; ', '')
+           if branch_to_update != 'master':
+               print "Unable to identify branch to update: '%s'" % data.get('ref', '')
+               return render_template('bad_request.html'), 400
+           elif (branch_to_update.find("/") != -1 or branch_to_update in ['.', '..']):
+               # Avoid feature branches, malicious branches and similar.
+               print "Skipping update for branch '%s'." % branch_to_update
+           else:
+               branch_deletion = data['after'].replace('0', '') == ''
+               branch_addition = data['before'].replace('0', '') == ''
+               update_branch(branch_to_update)
+        else:
+               print "Repository '%s' is not our repository '%s'. Ignoring." % (data_repository, REPO_URL)
+
+        print 'Finished processing POST request.'
+
+    else:
+        return render_template('bad_request.html'), 400
+
+    return render_template('ok.html'), 200
+
+
+def run_command(command):
+    print "Running command: %s" % command
+    process = subprocess.Popen(shlex.split(command.encode("ascii")), 
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    process.wait()
+    if process.returncode != 0:
+        print "Command '%s' exited with return code %s: %s" % (command, process.returncode, process.stdout.read())
+        return ''
+    return process.stdout.read()
